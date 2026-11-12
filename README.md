@@ -49,7 +49,8 @@ never type-checked. Call every method from at least one test.
 
 ### Data structures
 
-- **`LinkedList(T)`**: singly linked list. `addFront`, `addBack`, `find`, `findBy`, `contains`, `len`.
+- **`LinkedList(T)`**: singly linked list. `addFront`, `addBack`, `contains`, `len`, and
+  `find` / `findBy`, which return a `*T` to the matching value (nodes stay private).
 
 ### Algorithms
 

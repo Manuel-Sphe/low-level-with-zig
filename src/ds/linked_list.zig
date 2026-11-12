@@ -5,7 +5,24 @@ const utils = @import("../utils.zig");
 pub fn LinkedList(comptime T: type) type {
     return struct {
         const Self = @This();
-        pub const Node = struct { value: T, next: ?*Node };
+
+        /// Private: callers get `*T` from `find`, so they can't touch the links
+        /// and break the list or `len`.
+        const Node = struct {
+            value: T,
+            next: ?*Node,
+
+            /// Allocates a node on the heap. Free it with `destroy`.
+            fn create(allocator: Allocator, value: T, next: ?*Node) Allocator.Error!*Node {
+                const node = try allocator.create(Node);
+                node.* = .{ .value = value, .next = next };
+                return node;
+            }
+
+            fn destroy(self: *Node, allocator: Allocator) void {
+                allocator.destroy(self);
+            }
+        };
 
         head: ?*Node = null,
         allocator: Allocator,
@@ -16,11 +33,11 @@ pub fn LinkedList(comptime T: type) type {
         }
 
         pub fn deinit(self: *Self) void {
-            // start and the head
+            // start at the head
             var curr = self.head;
             while (curr) |node| {
                 const next_node = node.next;
-                self.allocator.destroy(node);
+                node.destroy(self.allocator);
                 curr = next_node;
             }
 
@@ -28,18 +45,13 @@ pub fn LinkedList(comptime T: type) type {
             self.len = 0;
         }
 
-        pub fn addFront(self: *Self, value: T) !void {
-            const new_node = try self.allocator.create(Node);
-
-            new_node.* = .{ .value = value, .next = self.head };
-
-            self.head = new_node;
+        pub fn addFront(self: *Self, value: T) Allocator.Error!void {
+            self.head = try Node.create(self.allocator, value, self.head);
             self.len += 1;
         }
 
-        pub fn addBack(self: *Self, value: T) !void {
-            const new_node = try self.allocator.create(Node);
-            new_node.* = .{ .value = value, .next = null };
+        pub fn addBack(self: *Self, value: T) Allocator.Error!void {
+            const new_node = try Node.create(self.allocator, value, null);
 
             self.len += 1;
             var curr = self.head orelse {
@@ -58,19 +70,20 @@ pub fn LinkedList(comptime T: type) type {
             return self.find(value) != null;
         }
 
-        /// Finds the first node whose value equals `target`, comparing by content
-        /// (see `utils.eql`). Use `findBy` when you need a different notion of equal.
-        pub fn find(self: *const Self, target: T) ?*Node {
+        /// Returns a pointer to the first value equal to `target`, comparing by content
+        /// (see `utils.eql`), or null. Use `findBy` when you need a different notion of equal.
+        /// The pointer can be used to read or change the value in place.
+        pub fn find(self: *const Self, target: T) ?*T {
             return self.findBy(target, utils.eqlFn(T));
         }
 
         /// Like `find`, but `isEqual(target, value)` decides what counts as equal,
         /// e.g. case-insensitive strings or matching only an `id` field.
-        pub fn findBy(self: *const Self, target: T, comptime isEqual: fn (T, T) bool) ?*Node {
+        pub fn findBy(self: *const Self, target: T, comptime isEqual: fn (T, T) bool) ?*T {
             var curr = self.head;
             while (curr) |node| : (curr = node.next) {
                 if (isEqual(target, node.value)) {
-                    return node;
+                    return &node.value;
                 }
             }
 
@@ -91,7 +104,7 @@ test "LinkedList(i32)" {
 
     try std.testing.expect(list.contains(3));
     try std.testing.expect(!list.contains(42));
-    try std.testing.expectEqual(@as(i32, 2), list.find(2).?.value);
+    try std.testing.expectEqual(@as(i32, 2), list.find(2).?.*);
 }
 
 test "LinkedList: struct with a string field compares by text" {
@@ -160,7 +173,7 @@ test "LinkedList: findBy with a custom comparison" {
         }
     }.f;
     const found = list.findBy(.{ .id = 7, .name = "" }, sameId) orelse return error.NotFound;
-    try std.testing.expectEqualStrings("ada", found.value.name);
+    try std.testing.expectEqualStrings("ada", found.name);
 }
 
 test "LinkedList: len counts every add, including addBack on an empty list" {
@@ -174,4 +187,19 @@ test "LinkedList: len counts every add, including addBack on an empty list" {
 
     list.deinit();
     try std.testing.expectEqual(@as(usize, 0), list.len);
+}
+
+test "LinkedList: find returns a pointer to the value, which can change it in place" {
+    var list = LinkedList(i32).init(std.testing.allocator);
+    defer list.deinit();
+
+    try list.addBack(1);
+    try list.addBack(2);
+
+    const two: ?*i32 = list.find(2);
+    two.?.* = 20;
+
+    try std.testing.expect(list.contains(20));
+    try std.testing.expect(!list.contains(2));
+    try std.testing.expect(list.find(42) == null);
 }
