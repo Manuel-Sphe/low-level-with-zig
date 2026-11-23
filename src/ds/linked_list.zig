@@ -1,13 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const utils = @import("../utils.zig");
-
-pub const IteratorError = error{
-    /// `next` was called after the last value (`hasNext` is false)
-    NoSuchElement,
-    /// `peek`, `changeHere` or `delete` was called with no node at the position
-    IllegalState,
-};
+const IteratorError = @import("iter_errors.zig").IteratorError;
 
 pub fn LinkedList(comptime T: type) type {
     return struct {
@@ -117,17 +111,9 @@ pub fn LinkedList(comptime T: type) type {
             return .{ .allocator = allocator };
         }
 
+        /// Frees every node. The list is empty afterwards and can be reused.
         pub fn deinit(self: *Self) void {
-            var current = self.head;
-            while (current) |node| {
-                // Save the next node first: `node` is freed on the next line
-                const next = node.next;
-                node.destroy(self.allocator);
-                current = next;
-            }
-
-            self.head = null;
-            self.len = 0;
+            while (self.popFront()) |_| {}
         }
 
         pub fn addFront(self: *Self, value: T) Allocator.Error!void {
@@ -149,6 +135,24 @@ pub fn LinkedList(comptime T: type) type {
             }
 
             tail.next = new_node;
+        }
+
+        /// Removes and returns the first value, or null if the list is empty. O(1).
+        /// Returns the value itself rather than a pointer: its node is freed here.
+        pub fn popFront(self: *Self) ?T {
+            const node = self.head orelse return null;
+            const value = node.value; // copy it out before freeing the node
+            self.head = node.next;
+            node.destroy(self.allocator);
+            self.len -= 1;
+            return value;
+        }
+
+        /// The first value without removing it, or null if the list is empty.
+        /// The pointer is valid until that value is removed.
+        pub fn peekFront(self: *const Self) ?*const T {
+            const node = self.head orelse return null;
+            return &node.value;
         }
 
         pub fn contains(self: *const Self, value: T) bool {
@@ -367,4 +371,19 @@ test "LinkedList.Iterator: delete removes and frees nodes at the head, middle an
     try it.delete(); // last (4)
     try expectValues(&list, &.{2});
     try std.testing.expectError(error.IllegalState, it.delete()); // nothing left here
+}
+
+test "LinkedList: popFront removes and returns values from the front" {
+    var list = LinkedList(i32).init(std.testing.allocator);
+    defer list.deinit();
+    try list.addBack(1);
+    try list.addBack(2);
+
+    try std.testing.expectEqual(@as(i32, 1), list.peekFront().?.*);
+    try std.testing.expectEqual(@as(?i32, 1), list.popFront());
+    try std.testing.expectEqual(@as(usize, 1), list.len);
+    try std.testing.expectEqual(@as(?i32, 2), list.popFront());
+    try std.testing.expectEqual(@as(?i32, null), list.popFront());
+    try std.testing.expect(list.peekFront() == null);
+    try std.testing.expectEqual(@as(usize, 0), list.len);
 }
