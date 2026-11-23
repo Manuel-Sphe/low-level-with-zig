@@ -49,10 +49,12 @@ never type-checked. Call every method from at least one test.
 
 ### Data structures
 
-- **`LinkedList(T)`**: singly linked list. `addFront`, `addBack`, `contains`, `len`, and
-  `find` / `findBy`, which return a read-only `*const T` to the matching value (nodes stay
-  private). `iterator()` walks the list and edits it in place: `hasNext`, `next`, `peek`,
-  `addHere`, `changeHere`, `delete`.
+- **`LinkedList(T)`**: singly linked list. `addFront`, `addBack`, `popFront`, `peekFront`,
+  `contains`, `len`, and `find` / `findBy`, which return a read-only `*const T` to the
+  matching value (nodes stay private). `iterator()` walks the list and edits it in place:
+  `hasNext`, `next`, `peek`, `addHere`, `changeHere`, `delete`.
+- **`Stack(T)`**: last in, first out, built on `LinkedList` (using only its front). `push`,
+  `pop` (returns `?T`, so `while (stack.pop()) |v|` drains it), `peek`, `isEmpty`, `len()`.
 
 ### Algorithms
 
